@@ -16,19 +16,34 @@ export default async function AdminUsersPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <header className="bg-white border-b border-slate-200">
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                        <Link href="/admin" className="text-slate-400 hover:text-slate-600">
-                            <ArrowLeft className="w-5 h-5" />
+                    <div className="flex items-center space-x-4 md:space-x-8">
+                        <Link href="/" className="flex items-center space-x-2 text-slate-500 hover:text-slate-900 transition-colors group">
+                            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                            <span className="text-sm font-semibold hidden sm:inline">Portal</span>
                         </Link>
-                        <div className="font-semibold text-slate-900 flex items-center">
-                            <Users className="w-5 h-5 mr-2 text-blue-800" />
-                            Manage Users
+
+                        <div className="h-6 w-[1px] bg-slate-200" />
+
+                        <div className="flex items-center space-x-3">
+                            <div className="bg-indigo-50 p-2 rounded-lg">
+                                <Users className="h-5 w-5 text-indigo-700" />
+                            </div>
+                            <span className="font-bold text-slate-900 tracking-tight whitespace-nowrap">Manage Users</span>
                         </div>
                     </div>
-                    <div className="text-sm">
-                        <span className="text-slate-600">{profile.name} (Admin)</span>
+
+                    <div className="flex items-center space-x-4">
+                        <div className="hidden md:flex flex-col items-end mr-2">
+                            <span className="text-sm font-bold text-slate-900">{profile.name}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Administrator</span>
+                        </div>
+                        <form action="/auth/signout" method="post">
+                            <button className="text-sm text-blue-600 font-bold hover:text-blue-800 transition-colors">
+                                Log out
+                            </button>
+                        </form>
                     </div>
                 </div>
             </header>
