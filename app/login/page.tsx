@@ -8,7 +8,7 @@ export default function LoginPage({ searchParams }: { searchParams: { error: str
             <img
                 src="/logo.png"
                 alt="Spitex JCare"
-                className="absolute top-6 right-6 h-12 md:h-16 w-auto object-contain"
+                className="absolute top-6 right-6 h-12 md:h-16 w-auto object-contain select-none pointer-events-none"
             />
 
             <div className="w-full max-w-sm mt-12">
