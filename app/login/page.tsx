@@ -1,9 +1,10 @@
 import { login } from './actions'
 
-export default function LoginPage({ searchParams }: { searchParams: { error: string } }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error: string }> }) {
+    const { error } = await searchParams
+
     return (
         <div className="flex min-h-screen flex-col items-center justify-center p-6 bg-slate-50 w-full relative">
-
             {/* Logo in the top right corner */}
             <img
                 src="/logo.png"
@@ -51,12 +52,12 @@ export default function LoginPage({ searchParams }: { searchParams: { error: str
                             />
                         </div>
 
-                        {searchParams?.error && (
+                        {error && (
                             <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg flex items-center">
                                 <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                 </svg>
-                                {searchParams.error}
+                                {error}
                             </div>
                         )}
 
@@ -68,7 +69,6 @@ export default function LoginPage({ searchParams }: { searchParams: { error: str
                         </button>
                     </form>
                 </div>
-
             </div>
         </div>
     )
