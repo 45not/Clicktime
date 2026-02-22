@@ -44,6 +44,7 @@ const getDurationHeight = (start: string, end: string) => {
 };
 
 export default function CalendarClient({ initialBlocks, userId, isAdmin, users }: CalendarClientProps) {
+    const [viewMode, setViewMode] = useState<'grid' | 'schedule'>('grid')
     const [currentDate, setCurrentDate] = useState(new Date())
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -154,8 +155,32 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         });
     }, [startTime, endTime, targetUserId, initialBlocks]);
 
+    // Group blocks by day for schedule view
+    const sortedBlocksByDay = useMemo(() => {
+        const groups: { [date: string]: CalendarBlock[] } = {}
+
+        // Use weekDates to ensure all days of the current week are accounted for
+        weekDates.forEach(date => {
+            groups[date.toDateString()] = []
+        })
+
+        initialBlocks.forEach(block => {
+            const date = new Date(block.start_time).toDateString()
+            if (groups[date]) {
+                groups[date].push(block)
+            }
+        })
+
+        // Sort blocks within each day
+        Object.keys(groups).forEach(date => {
+            groups[date].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+        })
+
+        return groups
+    }, [initialBlocks, weekDates])
+
     return (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px] md:h-[800px]">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-[600px]">
             {/* Calendar Header */}
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-30">
                 <div className="flex items-center space-x-4 md:space-x-8">
@@ -170,7 +195,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                         <button onClick={prevWeek} className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
                             <ChevronLeft className="w-4 h-4 text-slate-600" />
                         </button>
-                        <h2 className="text-sm md:text-base font-bold text-slate-800 min-w-[100px] md:min-w-[150px] text-center select-none">
+                        <h2 className="text-sm md:text-base font-bold text-slate-800 min-w-[100px] md:min-w-[150px] text-center select-none capitalize">
                             {weekDates[0].toLocaleDateString('de-CH', { month: 'short', year: 'numeric' })}
                         </h2>
                         <button onClick={nextWeek} className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
@@ -180,6 +205,22 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                 </div>
 
                 <div className="flex items-center space-x-2">
+                    {/* View Switcher Mobile Only */}
+                    <div className="md:hidden flex bg-slate-100 p-1 rounded-lg mr-2">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Grid
+                        </button>
+                        <button
+                            onClick={() => setViewMode('schedule')}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'schedule' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            List
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => openCreateModal(new Date())}
                         className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold flex items-center space-x-2 transition-all active:scale-95 shadow-sm ${isAdmin
@@ -194,8 +235,8 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                 </div>
             </div>
 
-            {/* Calendar Grid */}
-            <div className="flex-1 overflow-auto relative">
+            {/* Calendar Grid View */}
+            <div className={`flex-1 overflow-auto relative ${viewMode === 'schedule' ? 'hidden md:block' : 'block'}`}>
                 <div className="min-w-[1000px] flex">
                     {/* Time Column */}
                     <div className="w-16 flex-shrink-0 border-r border-slate-100 bg-slate-50/50">
@@ -301,6 +342,84 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                             );
                         })}
                     </div>
+                </div>
+            </div>
+
+            {/* List/Schedule View (Visible only on mobile when 'schedule' is selected) */}
+            <div className={`flex-1 overflow-auto p-4 bg-slate-50/50 ${viewMode === 'grid' ? 'hidden' : 'md:hidden'}`}>
+                <div className="space-y-6">
+                    {weekDates.map((date, i) => {
+                        const dayBlocks = sortedBlocksByDay[date.toDateString()] || []
+                        const isToday = date.toDateString() === new Date().toDateString()
+
+                        return (
+                            <div key={i} className="space-y-3">
+                                <div className="flex items-center justify-between sticky top-0 bg-slate-50/90 py-1 z-10">
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${isToday ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-900 border border-slate-200'}`}>
+                                            {date.getDate()}
+                                        </div>
+                                        <div>
+                                            <p className={`text-xs font-bold uppercase tracking-wider ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                {date.toLocaleDateString('de-CH', { weekday: 'long' })}
+                                            </p>
+                                            <p className="text-[10px] text-slate-500 font-medium">
+                                                {date.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => openCreateModal(date)}
+                                        className="p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                    >
+                                        <Plus className="w-5 h-5 text-slate-400 hover:text-blue-600" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-2 ml-1">
+                                    {dayBlocks.length > 0 ? (
+                                        dayBlocks.map(block => (
+                                            <div
+                                                key={block.id}
+                                                onClick={() => openDetailModal(block)}
+                                                className={`p-4 rounded-xl border-l-4 shadow-sm transition-all active:scale-[0.98] cursor-pointer ${isAdmin
+                                                    ? 'bg-white border-blue-500 border-y border-r border-y-slate-100 border-r-slate-100'
+                                                    : 'bg-teal-50/50 border-teal-500 border-y border-r border-y-teal-100/50 border-r-teal-100/50'
+                                                    }`}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-900 text-sm">{block.title}</h4>
+                                                        <div className="flex items-center space-x-2 mt-1 text-xs text-slate-500 font-medium">
+                                                            <ClockIcon className="w-3 h-3" />
+                                                            <span>
+                                                                {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.end_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    {isAdmin && block.profiles && (
+                                                        <div className="bg-blue-50 px-2 py-1 rounded text-[9px] font-bold text-blue-700 uppercase">
+                                                            {block.profiles.name.split(' ')[0]}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="py-4 px-6 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center space-y-2">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No entries</p>
+                                            <button
+                                                onClick={() => openCreateModal(date)}
+                                                className="text-[10px] font-bold text-blue-600 hover:underline"
+                                            >
+                                                + Add Availability
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
 
