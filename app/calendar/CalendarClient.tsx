@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { createCalendarBlock } from './actions'
 import { Plus, ChevronLeft, ChevronRight, X, ArrowLeft, Info, Clock as ClockIcon, User } from 'lucide-react'
 import Link from 'next/link'
@@ -21,8 +21,8 @@ interface CalendarClientProps {
     users: { id: string, name: string }[]
 }
 
-const START_HOUR = 7;
-const END_HOUR = 22;
+const START_HOUR = 0;
+const END_HOUR = 23;
 const ROW_HEIGHT = 60; // pixels per hour
 
 const roundToNext15Minutes = (date: Date) => {
@@ -51,6 +51,18 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
     const [selectedBlock, setSelectedBlock] = useState<CalendarBlock | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState('')
+    const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+    // Auto-scroll to 7:00 on mount
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            // Wait a tiny bit for render
+            setTimeout(() => {
+                const scrollPos = 7 * ROW_HEIGHT;
+                scrollContainerRef.current?.scrollTo({ top: scrollPos, behavior: 'auto' });
+            }, 100);
+        }
+    }, [viewMode]); // Also re-scroll if switching back to grid
 
     // Form state
     const [title, setTitle] = useState('')
@@ -236,7 +248,10 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
             </div>
 
             {/* Calendar Grid View */}
-            <div className={`flex-1 overflow-auto relative ${viewMode === 'schedule' ? 'hidden md:block' : 'block'}`}>
+            <div
+                ref={scrollContainerRef}
+                className={`flex-1 overflow-auto relative ${viewMode === 'schedule' ? 'hidden md:block' : 'block'}`}
+            >
                 <div className="min-w-[1000px] flex">
                     {/* Time Column */}
                     <div className="w-16 flex-shrink-0 border-r border-slate-100 bg-slate-50/50">
@@ -346,74 +361,62 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
             </div>
 
             {/* List/Schedule View (Visible only on mobile when 'schedule' is selected) */}
-            <div className={`flex-1 overflow-auto p-4 bg-slate-50/50 ${viewMode === 'grid' ? 'hidden' : 'md:hidden'}`}>
-                <div className="space-y-6">
+            <div className={`flex-1 overflow-auto bg-white ${viewMode === 'grid' ? 'hidden' : 'md:hidden'}`}>
+                <div className="flex flex-col">
                     {weekDates.map((date, i) => {
                         const dayBlocks = sortedBlocksByDay[date.toDateString()] || []
                         const isToday = date.toDateString() === new Date().toDateString()
+                        const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' };
+                        const formattedDate = date.toLocaleDateString('en-US', options).replace(',', '');
 
                         return (
-                            <div key={i} className="space-y-3">
-                                <div className="flex items-center justify-between sticky top-0 bg-slate-50/90 py-1 z-10">
-                                    <div className="flex items-center space-x-3">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${isToday ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-900 border border-slate-200'}`}>
-                                            {date.getDate()}
-                                        </div>
-                                        <div>
-                                            <p className={`text-xs font-bold uppercase tracking-wider ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>
-                                                {date.toLocaleDateString('de-CH', { weekday: 'long' })}
-                                            </p>
-                                            <p className="text-[10px] text-slate-500 font-medium">
-                                                {date.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}
-                                            </p>
-                                        </div>
+                            <div key={i} className="border-b border-slate-100 last:border-0 p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-baseline space-x-2">
+                                        <h3 className={`text-sm font-bold tracking-tight ${isToday ? 'text-blue-600' : 'text-slate-800'}`}>
+                                            {isToday ? `Today, ${formattedDate}` : formattedDate}
+                                        </h3>
                                     </div>
                                     <button
                                         onClick={() => openCreateModal(date)}
-                                        className="p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-95"
                                     >
-                                        <Plus className="w-5 h-5 text-slate-400 hover:text-blue-600" />
+                                        <Plus className="w-5 h-5" />
                                     </button>
                                 </div>
 
-                                <div className="space-y-2 ml-1">
+                                <div className="space-y-4">
                                     {dayBlocks.length > 0 ? (
                                         dayBlocks.map(block => (
                                             <div
                                                 key={block.id}
                                                 onClick={() => openDetailModal(block)}
-                                                className={`p-4 rounded-xl border-l-4 shadow-sm transition-all active:scale-[0.98] cursor-pointer ${isAdmin
-                                                    ? 'bg-white border-blue-500 border-y border-r border-y-slate-100 border-r-slate-100'
-                                                    : 'bg-teal-50/50 border-teal-500 border-y border-r border-y-teal-100/50 border-r-teal-100/50'
-                                                    }`}
+                                                className="group relative pl-4 pr-2 flex flex-col cursor-pointer active:bg-slate-50 transition-colors"
                                             >
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h4 className="font-bold text-slate-900 text-sm">{block.title}</h4>
-                                                        <div className="flex items-center space-x-2 mt-1 text-xs text-slate-500 font-medium">
-                                                            <ClockIcon className="w-3 h-3" />
-                                                            <span>
-                                                                {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.end_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
-                                                            </span>
-                                                        </div>
-                                                    </div>
+                                                {/* Vertical Indicator Line */}
+                                                <div className={`absolute left-0 top-0.5 bottom-0.5 w-1 rounded-full ${isAdmin ? 'bg-blue-600' : 'bg-teal-500'}`} />
+
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-xs font-bold text-slate-900 tabular-nums">
+                                                        {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                    <span className="text-xs font-medium text-slate-800 truncate">
+                                                        {block.title}
+                                                    </span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-400 font-medium pl-10 -mt-0.5">
+                                                    {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} – {new Date(block.end_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
                                                     {isAdmin && block.profiles && (
-                                                        <div className="bg-blue-50 px-2 py-1 rounded text-[9px] font-bold text-blue-700 uppercase">
-                                                            {block.profiles.name.split(' ')[0]}
-                                                        </div>
+                                                        <span className="ml-2 text-blue-600 font-bold opacity-80">
+                                                            • {block.profiles.name}
+                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="py-4 px-6 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center space-y-2">
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No entries</p>
-                                            <button
-                                                onClick={() => openCreateModal(date)}
-                                                className="text-[10px] font-bold text-blue-600 hover:underline"
-                                            >
-                                                + Add Availability
-                                            </button>
+                                        <div className="pl-4">
+                                            <p className="text-sm text-slate-700">No events today</p>
                                         </div>
                                     )}
                                 </div>
