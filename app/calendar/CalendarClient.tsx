@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { createCalendarBlock } from './actions'
-import { Plus, ChevronLeft, ChevronRight, X, ArrowLeft, Info, Clock as ClockIcon, User } from 'lucide-react'
+import { createCalendarBlock, updateCalendarBlock, deleteCalendarBlock } from './actions'
+import { Plus, ChevronLeft, ChevronRight, X, ArrowLeft, Info, Clock as ClockIcon, User, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 type CalendarBlock = {
     id: string
@@ -44,13 +45,20 @@ const getDurationHeight = (start: string, end: string) => {
 };
 
 export default function CalendarClient({ initialBlocks, userId, isAdmin, users }: CalendarClientProps) {
-    const [viewMode, setViewMode] = useState<'grid' | 'schedule'>('grid')
+    const router = useRouter()
+    const [viewMode, setViewMode] = useState<'grid' | 'schedule'>('schedule')
     const [currentDate, setCurrentDate] = useState(new Date())
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [selectedBlock, setSelectedBlock] = useState<CalendarBlock | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
+    const [isEditing, setIsEditing] = useState(false)
+    const [editTitle, setEditTitle] = useState('')
+    const [editStartTime, setEditStartTime] = useState('')
+    const [editEndTime, setEditEndTime] = useState('')
     const [error, setError] = useState('')
+    const [detailError, setDetailError] = useState('')
     const scrollContainerRef = useRef<HTMLDivElement>(null)
 
     // Auto-scroll to 7:00 on mount
@@ -123,8 +131,67 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
 
     const openDetailModal = (block: CalendarBlock) => {
         setSelectedBlock(block)
+        setIsEditing(false)
+        setDetailError('')
         setIsDetailModalOpen(true)
     }
+
+    const startEditing = () => {
+        if (!selectedBlock) return
+        const toLocalISO = (iso: string) => {
+            const d = new Date(iso)
+            const tzOffset = d.getTimezoneOffset() * 60000
+            return (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16)
+        }
+        setEditTitle(selectedBlock.title)
+        setEditStartTime(toLocalISO(selectedBlock.start_time))
+        setEditEndTime(toLocalISO(selectedBlock.end_time))
+        setDetailError('')
+        setIsEditing(true)
+    }
+
+    const handleUpdate = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!selectedBlock) return
+        setIsSubmitting(true)
+        setDetailError('')
+
+        const fd = new FormData()
+        fd.append('id', selectedBlock.id)
+        fd.append('title', editTitle)
+        fd.append('start_time', new Date(editStartTime).toISOString())
+        fd.append('end_time', new Date(editEndTime).toISOString())
+
+        const result = await updateCalendarBlock(fd)
+        setIsSubmitting(false)
+
+        if (result.error) {
+            setDetailError(result.error)
+        } else {
+            setIsDetailModalOpen(false)
+            setIsEditing(false)
+            router.refresh()
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!selectedBlock) return
+        if (!confirm('Are you sure you want to delete this block?')) return
+        setIsDeleting(true)
+        setDetailError('')
+
+        const result = await deleteCalendarBlock(selectedBlock.id)
+        setIsDeleting(false)
+
+        if (result.error) {
+            setDetailError(result.error)
+        } else {
+            setIsDetailModalOpen(false)
+            router.refresh()
+        }
+    }
+
+    const canEditBlock = (block: CalendarBlock) => isAdmin || block.user_id === userId
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -233,16 +300,16 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                         </button>
                     </div>
 
+                    {/* Desktop-only header Add button */}
                     <button
                         onClick={() => openCreateModal(new Date())}
-                        className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold flex items-center space-x-2 transition-all active:scale-95 shadow-sm ${isAdmin
+                        className={`hidden md:flex px-3 py-1.5 rounded-lg text-sm font-bold items-center space-x-2 transition-all active:scale-95 shadow-sm ${isAdmin
                             ? 'bg-blue-600 hover:bg-blue-700 text-white'
                             : 'bg-teal-600 hover:bg-teal-700 text-white'
                             }`}
                     >
                         <Plus className="w-4 h-4" />
-                        <span className="hidden xs:inline">{isAdmin ? 'Add for Employee' : 'Add Availability'}</span>
-                        <span className="xs:hidden">Add</span>
+                        <span>{isAdmin ? 'Add for Employee' : 'Add Availability'}</span>
                     </button>
                 </div>
             </div>
@@ -250,7 +317,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
             {/* Calendar Grid View */}
             <div
                 ref={scrollContainerRef}
-                className={`flex-1 overflow-auto relative ${viewMode === 'schedule' ? 'hidden md:block' : 'block'}`}
+                className={`flex-1 overflow-auto relative hidden md:block`}
             >
                 <div className="min-w-[1000px] flex">
                     {/* Time Column */}
@@ -360,8 +427,8 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                 </div>
             </div>
 
-            {/* List/Schedule View (Visible only on mobile when 'schedule' is selected) */}
-            <div className={`flex-1 overflow-auto bg-white ${viewMode === 'grid' ? 'hidden' : 'md:hidden'}`}>
+            {/* List/Schedule View — always visible on mobile */}
+            <div className="flex-1 overflow-auto bg-white md:hidden">
                 <div className="flex flex-col">
                     {weekDates.map((date, i) => {
                         const dayBlocks = sortedBlocksByDay[date.toDateString()] || []
@@ -517,80 +584,133 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
             {/* Detail Modal */}
             {isDetailModalOpen && selectedBlock && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                             <div className="flex items-center space-x-3">
                                 <div className="p-2 bg-blue-100 rounded-lg">
                                     <Info className="w-5 h-5 text-blue-600" />
                                 </div>
-                                <h3 className="text-xl font-bold text-slate-900">Block Details</h3>
+                                <h3 className="text-lg font-bold text-slate-900">{isEditing ? 'Edit Block' : 'Block Details'}</h3>
                             </div>
-                            <button onClick={() => setIsDetailModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                            <button onClick={() => { setIsDetailModalOpen(false); setIsEditing(false); }} className="text-slate-400 hover:text-slate-600 transition-colors">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-6">
-                            <div className="space-y-1">
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Title</p>
-                                <p className="text-lg font-bold text-slate-900">{selectedBlock.title}</p>
+                        {detailError && (
+                            <div className="mx-5 mt-4 p-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg">
+                                {detailError}
                             </div>
+                        )}
 
-                            <div className="grid grid-cols-2 gap-4">
+                        {isEditing ? (
+                            <form onSubmit={handleUpdate} className="p-5 space-y-4">
                                 <div className="space-y-1">
-                                    <div className="flex items-center space-x-2 text-slate-400">
-                                        <ClockIcon className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Start</span>
+                                    <label className="text-sm font-semibold text-slate-700 block">Title</label>
+                                    <input
+                                        type="text" required value={editTitle}
+                                        onChange={e => setEditTitle(e.target.value)}
+                                        className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-semibold text-slate-700 block">Start</label>
+                                        <input
+                                            type="datetime-local" required value={editStartTime}
+                                            onChange={e => setEditStartTime(e.target.value)}
+                                            className="w-full h-10 px-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 outline-none text-sm"
+                                        />
                                     </div>
-                                    <p className="text-sm font-semibold text-slate-700">
-                                        {new Date(selectedBlock.start_time).toLocaleString('de-CH', {
-                                            weekday: 'short',
-                                            day: '2-digit',
-                                            month: '2-digit',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </p>
-                                </div>
-                                <div className="space-y-1">
-                                    <div className="flex items-center space-x-2 text-slate-400">
-                                        <ClockIcon className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-wider">End</span>
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-semibold text-slate-700 block">End</label>
+                                        <input
+                                            type="datetime-local" required value={editEndTime}
+                                            onChange={e => setEditEndTime(e.target.value)}
+                                            className="w-full h-10 px-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 outline-none text-sm"
+                                        />
                                     </div>
-                                    <p className="text-sm font-semibold text-slate-700">
-                                        {new Date(selectedBlock.end_time).toLocaleString('de-CH', {
-                                            weekday: 'short',
-                                            day: '2-digit',
-                                            month: '2-digit',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </p>
                                 </div>
-                            </div>
-
-                            <div className="space-y-1 pt-4 border-t border-slate-100">
-                                <div className="flex items-center space-x-2 text-slate-400">
-                                    <User className="w-4 h-4" />
-                                    <span className="text-xs font-bold uppercase tracking-wider">Assigned to</span>
+                                <div className="flex space-x-3 pt-2">
+                                    <button type="button" onClick={() => setIsEditing(false)}
+                                        className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors text-sm">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" disabled={isSubmitting}
+                                        className="flex-1 py-2.5 bg-teal-600 text-white font-bold rounded-xl hover:bg-teal-700 disabled:bg-slate-300 transition-colors text-sm">
+                                        {isSubmitting ? 'Saving...' : 'Save Changes'}
+                                    </button>
                                 </div>
-                                <p className="text-sm font-bold text-blue-600">
-                                    {selectedBlock.profiles?.name || 'Unknown'}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="p-6 bg-slate-50 border-t border-slate-100">
-                            <button
-                                onClick={() => setIsDetailModalOpen(false)}
-                                className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
-                            >
-                                Close
-                            </button>
-                        </div>
+                            </form>
+                        ) : (
+                            <>
+                                <div className="p-5 space-y-5">
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Title</p>
+                                        <p className="text-lg font-bold text-slate-900">{selectedBlock.title}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <div className="flex items-center space-x-2 text-slate-400">
+                                                <ClockIcon className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase tracking-wider">Start</span>
+                                            </div>
+                                            <p className="text-sm font-semibold text-slate-700">
+                                                {new Date(selectedBlock.start_time).toLocaleString('de-CH', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <div className="flex items-center space-x-2 text-slate-400">
+                                                <ClockIcon className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase tracking-wider">End</span>
+                                            </div>
+                                            <p className="text-sm font-semibold text-slate-700">
+                                                {new Date(selectedBlock.end_time).toLocaleString('de-CH', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1 pt-4 border-t border-slate-100">
+                                        <div className="flex items-center space-x-2 text-slate-400">
+                                            <User className="w-4 h-4" />
+                                            <span className="text-xs font-bold uppercase tracking-wider">Assigned to</span>
+                                        </div>
+                                        <p className="text-sm font-bold text-blue-600">{selectedBlock.profiles?.name || 'Unknown'}</p>
+                                    </div>
+                                </div>
+                                <div className="p-5 bg-slate-50 border-t border-slate-100 flex space-x-3">
+                                    {canEditBlock(selectedBlock) && (
+                                        <>
+                                            <button onClick={startEditing}
+                                                className="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors text-sm flex items-center justify-center space-x-2">
+                                                <Pencil className="w-4 h-4" /><span>Edit</span>
+                                            </button>
+                                            <button onClick={handleDelete} disabled={isDeleting}
+                                                className="py-2.5 px-4 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 disabled:bg-slate-300 transition-colors text-sm flex items-center justify-center space-x-2">
+                                                <Trash2 className="w-4 h-4" /><span>{isDeleting ? '...' : 'Delete'}</span>
+                                            </button>
+                                        </>
+                                    )}
+                                    <button onClick={() => setIsDetailModalOpen(false)}
+                                        className={`${canEditBlock(selectedBlock) ? '' : 'flex-1'} py-2.5 px-4 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition-colors text-sm`}>
+                                        Close
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
+
+            {/* Floating Add Button — Mobile only */}
+            <button
+                onClick={() => openCreateModal(new Date())}
+                className={`md:hidden fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all active:scale-90 ${isAdmin
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-teal-600 hover:bg-teal-700 text-white'
+                    }`}
+            >
+                <Plus className="w-7 h-7" />
+            </button>
         </div>
     )
 }

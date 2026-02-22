@@ -45,6 +45,12 @@ export default async function AdminDashboard() {
 
     if (entriesError) console.error('Admin Entries Fetch Error:', entriesError)
 
+    // Fetch all categories for edit dropdown
+    const { data: categories } = await supabaseAdmin
+        .from('categories')
+        .select('id, name, article_number')
+        .order('name')
+
     console.log(`Admin Dashboard: Fetched ${users?.length || 0} users and ${entries?.length || 0} entries.`)
 
     return (
@@ -85,6 +91,7 @@ export default async function AdminDashboard() {
                 <AdminDashboardClient
                     entries={entries || []}
                     users={users || []}
+                    categories={categories || []}
                 />
             </main>
         </div>

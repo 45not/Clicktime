@@ -20,8 +20,6 @@ export async function createCalendarBlock(formData: FormData) {
         return { error: 'Missing required fields' }
     }
 
-    console.log(`Creating calendar block for user ${targetUserId}:`, { title, startTime, endTime })
-
     const { error, data } = await supabase
         .from('calendar_blocks')
         .insert({
@@ -33,11 +31,61 @@ export async function createCalendarBlock(formData: FormData) {
         .select()
 
     if (error) {
-        console.error('Error creating calendar block in Supabase:', error)
-        return { error: `Database error: ${error.message} (Code: ${error.code})` }
+        console.error('Error creating calendar block:', error)
+        return { error: `Database error: ${error.message}` }
     }
 
-    console.log('Successfully created block:', data)
+    revalidatePath('/calendar')
+    return { success: true, data }
+}
+
+export async function updateCalendarBlock(formData: FormData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) return { error: 'Not authenticated' }
+
+    const id = formData.get('id') as string
+    const title = formData.get('title') as string
+    const startTime = formData.get('start_time') as string
+    const endTime = formData.get('end_time') as string
+
+    if (!id || !title || !startTime || !endTime) {
+        return { error: 'Missing required fields' }
+    }
+
+    // RLS on calendar_blocks enforces that only the owner (or admin) can update
+    const { error } = await supabase
+        .from('calendar_blocks')
+        .update({ title, start_time: startTime, end_time: endTime })
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error updating calendar block:', error)
+        return { error: `Database error: ${error.message}` }
+    }
+
+    revalidatePath('/calendar')
+    return { success: true }
+}
+
+export async function deleteCalendarBlock(id: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) return { error: 'Not authenticated' }
+
+    // RLS on calendar_blocks enforces that only the owner (or admin) can delete
+    const { error } = await supabase
+        .from('calendar_blocks')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error deleting calendar block:', error)
+        return { error: `Database error: ${error.message}` }
+    }
+
     revalidatePath('/calendar')
     return { success: true }
 }
