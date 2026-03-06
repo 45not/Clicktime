@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { createCalendarBlock, updateCalendarBlock, deleteCalendarBlock } from './actions'
-import { Plus, ChevronLeft, ChevronRight, X, ArrowLeft, Info, Clock as ClockIcon, User, Pencil, Trash2 } from 'lucide-react'
+import { createCalendarBlock, updateCalendarBlock, deleteCalendarBlock, seedHolidays } from './actions'
+import { Plus, ChevronLeft, ChevronRight, X, ArrowLeft, Info, Clock as ClockIcon, User, Pencil, Trash2, Calendar as CalendarIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -12,11 +12,19 @@ type CalendarBlock = {
     start_time: string
     end_time: string
     title: string
+    note?: string | null
     profiles?: { name: string }
+}
+
+type Holiday = {
+    id: string
+    holiday_date: string
+    name: string
 }
 
 interface CalendarClientProps {
     initialBlocks: CalendarBlock[]
+    initialHolidays: Holiday[]
     userId: string
     isAdmin: boolean
     users: { id: string, name: string }[]
@@ -44,19 +52,23 @@ const getDurationHeight = (start: string, end: string) => {
     return (durationMinutes / 60) * ROW_HEIGHT;
 };
 
-export default function CalendarClient({ initialBlocks, userId, isAdmin, users }: CalendarClientProps) {
+type ViewMode = 'day' | 'week' | 'month'
+
+export default function CalendarClient({ initialBlocks, initialHolidays = [], userId, isAdmin, users }: CalendarClientProps) {
     const router = useRouter()
-    const [viewMode, setViewMode] = useState<'grid' | 'schedule'>('schedule')
+    const [viewMode, setViewMode] = useState<ViewMode>('week')
     const [currentDate, setCurrentDate] = useState(new Date())
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [selectedBlock, setSelectedBlock] = useState<CalendarBlock | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
+    const [isSeeding, setIsSeeding] = useState(false)
     const [isEditing, setIsEditing] = useState(false)
     const [editTitle, setEditTitle] = useState('')
     const [editStartTime, setEditStartTime] = useState('')
     const [editEndTime, setEditEndTime] = useState('')
+    const [editNote, setEditNote] = useState('')
     const [error, setError] = useState('')
     const [detailError, setDetailError] = useState('')
     const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -77,32 +89,78 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
     const [startTime, setStartTime] = useState('')
     const [endTime, setEndTime] = useState('')
     const [targetUserId, setTargetUserId] = useState(userId)
+    const [note, setNote] = useState('')
 
-    // Calculate dates for current week (Monday-Sunday)
-    const weekDates = useMemo(() => {
+    // Calculate visible dates strictly by view mode
+    const visibleDates = useMemo(() => {
         const start = new Date(currentDate)
-        const day = start.getDay()
-        const diff = start.getDate() - day + (day === 0 ? -6 : 1)
-        const monday = new Date(start.setDate(diff))
-        monday.setHours(0, 0, 0, 0)
+        start.setHours(0, 0, 0, 0)
 
-        return Array.from({ length: 7 }, (_, i) => {
-            const date = new Date(monday)
-            date.setDate(monday.getDate() + i)
-            return date
-        })
-    }, [currentDate])
+        if (viewMode === 'day') {
+            return [start]
+        }
+        else if (viewMode === 'week') {
+            const day = start.getDay() // 0 = Sunday
+            const diff = start.getDate() - day
+            start.setDate(diff)
+            return Array.from({ length: 7 }, (_, i) => {
+                const date = new Date(start)
+                date.setDate(start.getDate() + i)
+                return date
+            })
+        }
+        else {
+            // Month View standard 7-col layout
+            const year = start.getFullYear()
+            const month = start.getMonth()
+            const firstDayOfMonth = new Date(year, month, 1)
+            const lastDayOfMonth = new Date(year, month + 1, 0)
 
-    const nextWeek = () => {
+            const startDay = firstDayOfMonth.getDay() // Dropback to Sunday
+            const startDate = new Date(firstDayOfMonth)
+            startDate.setDate(startDate.getDate() - startDay)
+
+            const finishDay = lastDayOfMonth.getDay() // Extend to Saturday
+            const finishDate = new Date(lastDayOfMonth)
+            finishDate.setDate(finishDate.getDate() + (6 - finishDay))
+
+            const dates = []
+            const current = new Date(startDate)
+            while (current <= finishDate) {
+                dates.push(new Date(current))
+                current.setDate(current.getDate() + 1)
+            }
+            return dates
+        }
+    }, [currentDate, viewMode])
+
+    const nextPeriod = () => {
         const next = new Date(currentDate)
-        next.setDate(next.getDate() + 7)
+        if (viewMode === 'day') next.setDate(next.getDate() + 1)
+        else if (viewMode === 'week') next.setDate(next.getDate() + 7)
+        else next.setMonth(next.getMonth() + 1)
         setCurrentDate(next)
     }
 
-    const prevWeek = () => {
+    const prevPeriod = () => {
         const prev = new Date(currentDate)
-        prev.setDate(prev.getDate() - 7)
+        if (viewMode === 'day') prev.setDate(prev.getDate() - 1)
+        else if (viewMode === 'week') prev.setDate(prev.getDate() - 7)
+        else prev.setMonth(prev.getMonth() - 1)
         setCurrentDate(prev)
+    }
+
+    const handleSeedHolidays = async () => {
+        setIsSeeding(true)
+        const year = currentDate.getFullYear()
+        const result = await seedHolidays(year)
+        setIsSeeding(false)
+        if (result.error) {
+            alert(`Error seeding holidays: ${result.error}`)
+        } else {
+            alert(`Successfully seeded holidays for ${year}!`)
+            router.refresh()
+        }
     }
 
     const openCreateModal = (date: Date) => {
@@ -124,6 +182,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         setStartTime(toLocalISO(start));
         setEndTime(toLocalISO(end));
         setTitle('')
+        setNote('')
         setTargetUserId(userId)
         setError('')
         setIsModalOpen(true)
@@ -146,6 +205,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         setEditTitle(selectedBlock.title)
         setEditStartTime(toLocalISO(selectedBlock.start_time))
         setEditEndTime(toLocalISO(selectedBlock.end_time))
+        setEditNote(selectedBlock.note || '')
         setDetailError('')
         setIsEditing(true)
     }
@@ -161,6 +221,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         fd.append('title', editTitle)
         fd.append('start_time', new Date(editStartTime).toISOString())
         fd.append('end_time', new Date(editEndTime).toISOString())
+        fd.append('note', editNote)
 
         const result = await updateCalendarBlock(fd)
         setIsSubmitting(false)
@@ -207,6 +268,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         formData.append('start_time', startISO)
         formData.append('end_time', endISO)
         formData.append('target_user_id', targetUserId)
+        formData.append('note', note)
 
         const result = await createCalendarBlock(formData)
 
@@ -238,8 +300,8 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
     const sortedBlocksByDay = useMemo(() => {
         const groups: { [date: string]: CalendarBlock[] } = {}
 
-        // Use weekDates to ensure all days of the current week are accounted for
-        weekDates.forEach(date => {
+        // Use visibleDates to ensure all days of view are accounted for
+        visibleDates.forEach(date => {
             groups[date.toDateString()] = []
         })
 
@@ -256,7 +318,7 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
         })
 
         return groups
-    }, [initialBlocks, weekDates])
+    }, [initialBlocks, visibleDates])
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-[600px]">
@@ -270,35 +332,60 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
 
                     <div className="h-6 w-[1px] bg-slate-200" />
 
-                    <div className="flex items-center space-x-2">
-                        <button onClick={prevWeek} className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
+                    <div className="flex items-center space-x-1 sm:space-x-2">
+                        <button onClick={prevPeriod} className="p-1 sm:p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
                             <ChevronLeft className="w-4 h-4 text-slate-600" />
                         </button>
-                        <h2 className="text-sm md:text-base font-bold text-slate-800 min-w-[100px] md:min-w-[150px] text-center select-none capitalize">
-                            {weekDates[0].toLocaleDateString('de-CH', { month: 'short', year: 'numeric' })}
-                        </h2>
-                        <button onClick={nextWeek} className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
+                        <div className="relative inline-flex items-center justify-center">
+                            <select
+                                value={currentDate.getMonth()}
+                                onChange={(e) => {
+                                    const next = new Date(currentDate)
+                                    next.setMonth(parseInt(e.target.value))
+                                    setCurrentDate(next)
+                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                title="Select Month"
+                            >
+                                {Array.from({ length: 12 }, (_, i) => {
+                                    const d = new Date(currentDate.getFullYear(), i, 1)
+                                    return <option key={i} value={i}>{d.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}</option>
+                                })}
+                            </select>
+                            <h2 className="text-sm md:text-base font-bold text-slate-800 min-w-[120px] md:min-w-[150px] text-center select-none capitalize pointer-events-none hover:bg-slate-50 transition-colors px-2 py-1 rounded-md">
+                                {currentDate.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}
+                            </h2>
+                        </div>
+                        <button onClick={nextPeriod} className="p-1 sm:p-1.5 hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
                             <ChevronRight className="w-4 h-4 text-slate-600" />
                         </button>
                     </div>
                 </div>
 
                 <div className="flex items-center space-x-2">
-                    {/* View Switcher Mobile Only */}
-                    <div className="md:hidden flex bg-slate-100 p-1 rounded-lg mr-2">
-                        <button
-                            onClick={() => setViewMode('grid')}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            Grid
-                        </button>
-                        <button
-                            onClick={() => setViewMode('schedule')}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'schedule' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            List
-                        </button>
+                    {/* View Switcher Desktop */}
+                    <div className="hidden md:flex bg-slate-100 p-1 rounded-lg mr-2">
+                        {(['day', 'week', 'month'] as const).map(mode => (
+                            <button
+                                key={mode}
+                                onClick={() => setViewMode(mode)}
+                                className={`px-2 py-1 text-xs font-bold rounded-md transition-all capitalize ${viewMode === mode ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                {mode}
+                            </button>
+                        ))}
                     </div>
+
+                    {isAdmin && (
+                        <button
+                            onClick={handleSeedHolidays}
+                            disabled={isSeeding}
+                            className="hidden md:flex px-3 py-1.5 rounded-lg text-sm font-bold items-center space-x-2 transition-all active:scale-95 shadow-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
+                        >
+                            <CalendarIcon className="w-4 h-4" />
+                            <span>{isSeeding ? 'Seeding...' : 'Seed Holidays'}</span>
+                        </button>
+                    )}
 
                     {/* Desktop-only header Add button */}
                     <button
@@ -314,123 +401,212 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                 </div>
             </div>
 
-            {/* Calendar Grid View */}
-            <div
-                ref={scrollContainerRef}
-                className={`flex-1 overflow-auto relative hidden md:block`}
-            >
-                <div className="min-w-[1000px] flex">
-                    {/* Time Column */}
-                    <div className="w-16 flex-shrink-0 border-r border-slate-100 bg-slate-50/50">
-                        <div className="h-14 border-b border-slate-100" /> {/* Spacer for header */}
-                        {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => {
-                            const hour = START_HOUR + i;
-                            return (
-                                <div key={hour} className="h-[60px] relative">
-                                    <span className="absolute -top-3 right-2 text-[10px] font-bold text-slate-400 tabular-nums">
-                                        {hour}:00
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Days Grid */}
-                    <div className="flex-1 grid grid-cols-7 relative">
-                        {weekDates.map((date, i) => {
-                            const isToday = date.toDateString() === new Date().toDateString();
-
-                            return (
-                                <div key={i} className={`relative border-r border-slate-100 last:border-r-0 ${isToday ? 'bg-blue-50/10' : ''}`}>
-                                    {/* Header */}
-                                    <div className="h-14 p-2 text-center border-b border-slate-100 bg-white sticky top-0 z-20">
-                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                                            {date.toLocaleDateString('de-CH', { weekday: 'short' })}
-                                        </p>
-                                        <p className={`text-lg font-bold ${isToday ? 'text-blue-600' : 'text-slate-900'}`}>
-                                            {date.getDate()}
-                                        </p>
+            {/* Calendar Desktop Grid View (Day and Week) */}
+            {viewMode !== 'month' && (
+                <div
+                    ref={scrollContainerRef}
+                    className={`flex-1 overflow-auto relative hidden md:block`}
+                >
+                    <div className="min-w-[800px] flex">
+                        {/* Time Column */}
+                        <div className="w-16 flex-shrink-0 border-r border-slate-100 bg-slate-50/50">
+                            <div className="h-14 border-b border-slate-100" /> {/* Spacer for header */}
+                            {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => {
+                                const hour = START_HOUR + i;
+                                return (
+                                    <div key={hour} className="h-[60px] relative">
+                                        <span className="absolute -top-3 right-2 text-[10px] font-bold text-slate-400 tabular-nums">
+                                            {hour}:00
+                                        </span>
                                     </div>
+                                );
+                            })}
+                        </div>
 
-                                    {/* Cell Grid Lines */}
-                                    <div
-                                        className="relative cursor-crosshair"
-                                        style={{ height: (END_HOUR - START_HOUR + 1) * ROW_HEIGHT }}
-                                        onClick={(e) => {
-                                            const rect = e.currentTarget.getBoundingClientRect();
-                                            const y = e.clientY - rect.top;
-                                            const clickedHour = Math.floor(y / ROW_HEIGHT) + START_HOUR;
-                                            const clickedMinutes = Math.floor((y % ROW_HEIGHT) / (ROW_HEIGHT / 4)) * 15;
-                                            const d = new Date(date);
-                                            d.setHours(clickedHour, clickedMinutes, 0, 0);
-                                            openCreateModal(d);
-                                        }}
-                                    >
-                                        {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, j) => (
-                                            <div key={j} className="h-[60px] border-b border-slate-100/50" />
-                                        ))}
+                        {/* Days Grid */}
+                        <div className={`flex-1 grid grid-cols-${viewMode === 'day' ? '1' : '7'} relative`}>
+                            {visibleDates.map((date, i) => {
+                                const isToday = date.toDateString() === new Date().toDateString();
+                                const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-                                        {/* Current Time Indicator */}
-                                        {isToday && (
-                                            <div
-                                                className="absolute w-full border-t-2 border-red-500 z-30 pointer-events-none flex items-center"
-                                                style={{ top: getMinuteOffset(new Date().toISOString()) }}
-                                            >
-                                                <div className="w-2 h-2 bg-red-500 rounded-full -ml-1 transition-all shadow-sm" />
-                                            </div>
-                                        )}
+                                return (
+                                    <div key={i} className={`relative border-r border-slate-100 last:border-r-0 ${isToday ? 'bg-blue-50/10' : ''}`}>
+                                        {/* Header */}
+                                        <div className="h-14 p-2 text-center border-b border-slate-100 bg-white sticky top-0 z-20">
+                                            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+                                                {date.toLocaleDateString('de-CH', { weekday: 'short' })}
+                                            </p>
+                                            <p className={`text-lg font-bold ${isToday ? 'text-blue-600' : 'text-slate-900'}`}>
+                                                {date.getDate()}
+                                            </p>
+                                        </div>
 
-                                        {/* Blocks */}
-                                        {initialBlocks
-                                            .filter(block => {
-                                                const blockDate = new Date(block.start_time)
-                                                return blockDate.toDateString() === date.toDateString()
-                                            })
-                                            .map(block => {
-                                                const top = getMinuteOffset(block.start_time);
-                                                const height = getDurationHeight(block.start_time, block.end_time);
+                                        {/* Cell Grid Lines */}
+                                        <div
+                                            className="relative cursor-crosshair"
+                                            style={{ height: (END_HOUR - START_HOUR + 1) * ROW_HEIGHT }}
+                                            onClick={(e) => {
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                const y = e.clientY - rect.top;
+                                                const clickedHour = Math.floor(y / ROW_HEIGHT) + START_HOUR;
+                                                const clickedMinutes = Math.floor((y % ROW_HEIGHT) / (ROW_HEIGHT / 4)) * 15;
+                                                const d = new Date(date);
+                                                d.setHours(clickedHour, clickedMinutes, 0, 0);
+                                                openCreateModal(d);
+                                            }}
+                                        >
+                                            {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, j) => (
+                                                <div key={j} className="h-[60px] border-b border-slate-100/50" />
+                                            ))}
 
-                                                return (
+                                            {/* Current Time Indicator */}
+                                            {isToday && (
+                                                <div
+                                                    className="absolute w-full border-t-2 border-red-500 z-30 pointer-events-none flex items-center"
+                                                    style={{ top: getMinuteOffset(new Date().toISOString()) }}
+                                                >
+                                                    <div className="w-2 h-2 bg-red-500 rounded-full -ml-1 transition-all shadow-sm" />
+                                                </div>
+                                            )}
+
+                                            {/* Holidays All-Day Indicator */}
+                                            {initialHolidays
+                                                .filter(h => h.holiday_date === dateString)
+                                                .map(holiday => (
                                                     <div
-                                                        key={block.id}
+                                                        key={holiday.id}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            openDetailModal(block);
+                                                            // Use the same modal logic but for a read-only holiday block
+                                                            openDetailModal({
+                                                                id: holiday.id,
+                                                                user_id: 'system',
+                                                                title: holiday.name,
+                                                                start_time: `${holiday.holiday_date}T00:00:00Z`,
+                                                                end_time: `${holiday.holiday_date}T23:59:59Z`,
+                                                                note: 'Public Holiday'
+                                                            });
                                                         }}
-                                                        className={`absolute left-1 right-1 rounded-md p-2 text-[10px] overflow-hidden shadow-sm border overflow-y-auto transition-all hover:ring-2 hover:ring-offset-1 z-10 cursor-pointer ${isAdmin
-                                                            ? 'bg-white border-slate-200 hover:ring-blue-400'
-                                                            : 'bg-teal-50 border-teal-100 text-teal-800 hover:ring-teal-400'
-                                                            }`}
-                                                        style={{
-                                                            top,
-                                                            height: Math.max(height, 24),
-                                                        }}
+                                                        className="absolute top-1 left-1 right-1 bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold px-1.5 py-1 rounded shadow-sm z-20 cursor-pointer hover:ring-2 hover:ring-red-400 truncate"
                                                     >
-                                                        <div className="font-bold truncate">{block.title}</div>
-                                                        <div className="opacity-70 font-medium whitespace-nowrap">
-                                                            {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.end_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
-                                                        </div>
-                                                        {isAdmin && block.profiles && (
-                                                            <div className="mt-1 font-bold text-blue-600 border-t border-slate-100/50 pt-1">
-                                                                👤 {block.profiles.name}
-                                                            </div>
-                                                        )}
+                                                        🎉 {holiday.name}
                                                     </div>
-                                                );
-                                            })
-                                        }
+                                                ))
+                                            }
+
+                                            {/* Blocks */}
+                                            {initialBlocks
+                                                .filter(block => {
+                                                    const blockDate = new Date(block.start_time)
+                                                    return blockDate.toDateString() === date.toDateString()
+                                                })
+                                                .map(block => {
+                                                    const top = getMinuteOffset(block.start_time);
+                                                    const height = getDurationHeight(block.start_time, block.end_time);
+
+                                                    return (
+                                                        <div
+                                                            key={block.id}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                openDetailModal(block);
+                                                            }}
+                                                            className={`absolute left-1 right-1 rounded-md p-2 text-[10px] overflow-hidden shadow-sm border overflow-y-auto transition-all hover:ring-2 hover:ring-offset-1 z-10 cursor-pointer ${isAdmin
+                                                                ? 'bg-white border-slate-200 hover:ring-blue-400'
+                                                                : 'bg-teal-50 border-teal-100 text-teal-800 hover:ring-teal-400'
+                                                                }`}
+                                                            style={{
+                                                                top,
+                                                                height: Math.max(height, 24),
+                                                            }}
+                                                        >
+                                                            <div className="font-bold truncate">{block.title}</div>
+                                                            <div className="opacity-70 font-medium whitespace-nowrap">
+                                                                {new Date(block.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.end_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
+                                                            </div>
+                                                            {isAdmin && block.profiles && (
+                                                                <div className="mt-1 font-bold text-blue-600 border-t border-slate-100/50 pt-1">
+                                                                    👤 {block.profiles.name}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            }
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Month View (Desktop) */}
+            {viewMode === 'month' && (
+                <div className="flex-1 hidden md:flex flex-col overflow-hidden bg-slate-50">
+                    <div className="grid grid-cols-7 border-b border-slate-200 bg-white shadow-sm z-10">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className="h-10 flex items-center justify-center text-xs font-bold text-slate-500 uppercase tracking-wider border-r border-slate-100 last:border-r-0">
+                                {day}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex-1 grid grid-cols-7 grid-rows-5 overflow-y-auto">
+                        {visibleDates.map((date, i) => {
+                            const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+                            const dayHolidays = initialHolidays.filter(h => h.holiday_date === dateString)
+                            const dayBlocks = sortedBlocksByDay[date.toDateString()] || []
+
+                            const isToday = date.toDateString() === new Date().toDateString()
+                            const isCurrentMonth = date.getMonth() === currentDate.getMonth()
+
+                            // Display up to 3 items, then "X more"
+                            const maxDisplay = 3;
+                            const totalItems = dayHolidays.length + dayBlocks.length;
+                            const displayHolidays = dayHolidays.slice(0, maxDisplay);
+                            const displayBlocks = dayBlocks.slice(0, Math.max(0, maxDisplay - displayHolidays.length));
+                            const moreCount = totalItems - (displayHolidays.length + displayBlocks.length);
+
+                            return (
+                                <div
+                                    key={i}
+                                    onClick={() => openCreateModal(date)}
+                                    className={`min-h-[100px] border-r border-b border-slate-200 p-2 cursor-crosshair hover:bg-slate-50 transition-colors flex flex-col ${!isCurrentMonth ? 'bg-slate-50/50 opacity-60' : 'bg-white'}`}
+                                >
+                                    <div className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center mb-1 ${isToday ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700'}`}>
+                                        {date.getDate()}
+                                    </div>
+                                    <div className="space-y-1 flex-1 overflow-hidden">
+                                        {displayHolidays.map(h => (
+                                            <div key={h.id} onClick={(e) => { e.stopPropagation(); openDetailModal({ id: h.id, user_id: 'system', title: h.name, start_time: `${h.holiday_date}T00:00:00Z`, end_time: `${h.holiday_date}T23:59:59Z`, note: 'Public Holiday' }); }} className="text-[10px] bg-red-50 text-red-700 border border-red-200 rounded px-1 py-0.5 truncate font-bold cursor-pointer hover:bg-red-100 mb-0.5">
+                                                🎉 {h.name}
+                                            </div>
+                                        ))}
+                                        {displayBlocks.map(b => (
+                                            <div key={b.id} onClick={(e) => { e.stopPropagation(); openDetailModal(b) }} className={`text-[10px] rounded px-1 py-0.5 truncate cursor-pointer border mb-0.5 ${isAdmin ? 'bg-white border-slate-200 hover:border-blue-400' : 'bg-teal-50 border-teal-100 text-teal-800 hover:border-teal-400'}`}>
+                                                {new Date(b.start_time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} {b.title}
+                                            </div>
+                                        ))}
+                                        {moreCount > 0 && (
+                                            <div className="text-[10px] font-bold text-slate-500 text-center mt-1">
+                                                + {moreCount} more
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            );
+                            )
                         })}
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* List/Schedule View — always visible on mobile */}
             <div className="flex-1 overflow-auto bg-white md:hidden">
                 <div className="flex flex-col">
-                    {weekDates.map((date, i) => {
+                    {visibleDates.map((date, i) => {
+                        const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+                        const dayHolidays = initialHolidays.filter(h => h.holiday_date === dateString)
                         const dayBlocks = sortedBlocksByDay[date.toDateString()] || []
                         const isToday = date.toDateString() === new Date().toDateString()
                         const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' };
@@ -453,6 +629,31 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                                 </div>
 
                                 <div className="space-y-4">
+                                    {dayHolidays.map(holiday => (
+                                        <div
+                                            key={holiday.id}
+                                            onClick={() => openDetailModal({
+                                                id: holiday.id,
+                                                user_id: 'system',
+                                                title: holiday.name,
+                                                start_time: `${holiday.holiday_date}T00:00:00Z`,
+                                                end_time: `${holiday.holiday_date}T23:59:59Z`,
+                                                note: 'Public Holiday'
+                                            })}
+                                            className="group relative pl-4 pr-2 flex flex-col cursor-pointer active:bg-slate-50 transition-colors"
+                                        >
+                                            <div className="absolute left-0 top-0.5 bottom-0.5 w-1 rounded-full bg-red-400" />
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs font-bold text-red-600 uppercase tracking-wider">
+                                                    All Day
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-800 truncate">
+                                                    🎉 {holiday.name}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+
                                     {dayBlocks.length > 0 ? (
                                         dayBlocks.map(block => (
                                             <div
@@ -481,11 +682,11 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                                                 </div>
                                             </div>
                                         ))
-                                    ) : (
+                                    ) : (dayBlocks.length === 0 && dayHolidays.length === 0 && (
                                         <div className="pl-4">
                                             <p className="text-sm text-slate-700">No events today</p>
                                         </div>
-                                    )}
+                                    ))}
                                 </div>
                             </div>
                         )
@@ -570,6 +771,17 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                                 </div>
                             </div>
 
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold text-slate-700 block">Note</label>
+                                <textarea
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    rows={2}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all outline-none resize-none text-sm"
+                                    placeholder="Do not include patient identifiers"
+                                />
+                            </div>
+
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
@@ -631,6 +843,16 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                                         />
                                     </div>
                                 </div>
+                                <div className="space-y-1">
+                                    <label className="text-sm font-semibold text-slate-700 block">Note</label>
+                                    <textarea
+                                        value={editNote}
+                                        onChange={e => setEditNote(e.target.value)}
+                                        rows={2}
+                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 outline-none text-sm resize-none"
+                                        placeholder="Do not include patient identifiers"
+                                    />
+                                </div>
                                 <div className="flex space-x-3 pt-2">
                                     <button type="button" onClick={() => setIsEditing(false)}
                                         className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors text-sm">
@@ -677,6 +899,12 @@ export default function CalendarClient({ initialBlocks, userId, isAdmin, users }
                                         <p className="text-sm font-bold text-blue-600">{selectedBlock.profiles?.name || 'Unknown'}</p>
                                     </div>
                                 </div>
+                                {selectedBlock.note && (
+                                    <div className="space-y-1 pt-4 border-t border-slate-100">
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Note</p>
+                                        <p className="text-sm text-slate-700 italic">{selectedBlock.note}</p>
+                                    </div>
+                                )}
                                 <div className="p-5 bg-slate-50 border-t border-slate-100 flex space-x-3">
                                     {canEditBlock(selectedBlock) && (
                                         <>

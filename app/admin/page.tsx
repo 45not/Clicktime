@@ -51,7 +51,7 @@ export default async function AdminDashboard() {
         .select('id, name, article_number')
         .order('name')
 
-    console.log(`Admin Dashboard: Fetched ${users?.length || 0} users and ${entries?.length || 0} entries.`)
+
 
     return (
         <div className="min-h-screen bg-slate-50">

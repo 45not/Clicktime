@@ -1,6 +1,6 @@
 import { getUserProfile } from '@/lib/auth'
 import Link from 'next/link'
-import { Clock, Calendar, ShieldCheck } from 'lucide-react'
+import { Clock, Calendar, ShieldCheck, Folder } from 'lucide-react'
 
 export default async function ChooserPage() {
     const profile = await getUserProfile()
@@ -18,10 +18,10 @@ export default async function ChooserPage() {
                 <p className="text-slate-500 mt-2 font-medium">Welcome back, {profile.name}</p>
             </div>
 
-            <div className={`grid grid-cols-1 ${profile.role === 'admin' ? 'md:grid-cols-3' : 'sm:grid-cols-2'} gap-6 w-full max-w-4xl`}>
+            <div className="flex flex-wrap justify-center gap-6 w-full max-w-5xl">
                 <Link
                     href="/time"
-                    className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center"
+                    className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center w-full md:w-[calc(50%-1.5rem)] lg:w-[calc(25%-1.5rem)] min-w-[240px]"
                 >
                     <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center group-hover:bg-blue-100 transition-colors border-none">
                         <Clock className="w-7 h-7 text-blue-600" />
@@ -34,7 +34,7 @@ export default async function ChooserPage() {
 
                 <Link
                     href="/calendar"
-                    className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-teal-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center"
+                    className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-teal-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center w-full md:w-[calc(50%-1.5rem)] lg:w-[calc(25%-1.5rem)] min-w-[240px]"
                 >
                     <div className="w-14 h-14 bg-teal-50 rounded-full flex items-center justify-center group-hover:bg-teal-100 transition-colors border-none">
                         <Calendar className="w-7 h-7 text-teal-600" />
@@ -45,10 +45,23 @@ export default async function ChooserPage() {
                     </div>
                 </Link>
 
+                <Link
+                    href="/documents"
+                    className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-amber-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center w-full md:w-[calc(50%-1.5rem)] lg:w-[calc(25%-1.5rem)] min-w-[240px]"
+                >
+                    <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center group-hover:bg-amber-100 transition-colors border-none">
+                        <Folder className="w-7 h-7 text-amber-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-900">Documents</h2>
+                        <p className="text-xs text-slate-500 mt-1">Access files and resources</p>
+                    </div>
+                </Link>
+
                 {profile.role === 'admin' && (
                     <Link
                         href="/admin/users"
-                        className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center"
+                        className="group bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center space-y-4 text-center w-full md:w-[calc(50%-1.5rem)] lg:w-[calc(25%-1.5rem)] min-w-[240px]"
                     >
                         <div className="w-14 h-14 bg-indigo-50 rounded-full flex items-center justify-center group-hover:bg-indigo-100 transition-colors border-none">
                             <ShieldCheck className="w-7 h-7 text-indigo-600" />

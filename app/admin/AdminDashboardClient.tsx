@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Download, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import { Download, MoreHorizontal, Pencil, Trash2, X, ShieldCheck } from 'lucide-react'
 import { updateTimeEntry, deleteTimeEntry } from './actions'
 import { useRouter } from 'next/navigation'
 
@@ -26,7 +26,6 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
     const [editUserId, setEditUserId] = useState('')
     const [editStartTime, setEditStartTime] = useState('')
     const [editEndTime, setEditEndTime] = useState('')
-    const [editDuration, setEditDuration] = useState('')
     const [editCategoryId, setEditCategoryId] = useState('')
     const [editNote, setEditNote] = useState('')
     const [editError, setEditError] = useState('')
@@ -94,7 +93,6 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
         setEditUserId(entry.user_id || '')
         setEditStartTime(entry.start_time ? toLocalISO(entry.start_time) : '')
         setEditEndTime(entry.end_time ? toLocalISO(entry.end_time) : '')
-        setEditDuration(entry.duration_minutes !== null ? String(entry.duration_minutes) : '')
         // We need to find the category id — it's not in the select, so we search by name+article
         const matchedCat = categories.find(c =>
             c.name === entry.categories?.name && c.article_number === entry.categories?.article_number
@@ -116,7 +114,6 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
         fd.append('user_id', editUserId)
         fd.append('start_time', new Date(editStartTime).toISOString())
         if (editEndTime) fd.append('end_time', new Date(editEndTime).toISOString())
-        fd.append('duration_minutes', editDuration)
         if (editCategoryId) fd.append('category_id', editCategoryId)
         fd.append('note', editNote)
 
@@ -148,6 +145,25 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
 
     return (
         <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                <div className="p-3 bg-blue-100/50 rounded-xl">
+                    <ShieldCheck className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold text-slate-900 tracking-tight">Time Entries</h2>
+                    <p className="text-sm text-slate-500 font-medium mt-0.5">Manage and export employee time records</p>
+                </div>
+            </div>
+            <div className="flex items-center space-x-3 w-full sm:w-auto mt-4 sm:mt-0">
+                <button
+                    onClick={exportCSV}
+                    className="h-10 px-6 inline-flex items-center justify-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium transition-colors"
+                >
+                    <Download className="w-4 h-4" />
+                    <span>Export CSV</span>
+                </button>
+            </div>
+
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex flex-col md:flex-row md:items-end gap-4">
                     <div className="flex-1 space-y-1">
@@ -183,14 +199,6 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
                             className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                     </div>
-
-                    <button
-                        onClick={exportCSV}
-                        className="h-10 px-6 inline-flex items-center justify-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium transition-colors"
-                    >
-                        <Download className="w-4 h-4" />
-                        <span>Export CSV</span>
-                    </button>
                 </div>
             </div>
 
@@ -313,24 +321,15 @@ export default function AdminDashboardClient({ entries, users, categories }: Adm
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-sm font-semibold text-slate-700 block">Duration (min)</label>
-                                    <input type="number" value={editDuration}
-                                        onChange={e => setEditDuration(e.target.value)}
-                                        className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                                        placeholder="e.g. 30" />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-sm font-semibold text-slate-700 block">Category</label>
-                                    <select value={editCategoryId} onChange={e => setEditCategoryId(e.target.value)}
-                                        className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
-                                        <option value="">No Category</option>
-                                        {categories.map(c => (
-                                            <option key={c.id} value={c.id}>{c.article_number} – {c.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold text-slate-700 block">Category</label>
+                                <select value={editCategoryId} onChange={e => setEditCategoryId(e.target.value)}
+                                    className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+                                    <option value="">No Category</option>
+                                    {categories.map(c => (
+                                        <option key={c.id} value={c.id}>{c.article_number} – {c.name}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div className="space-y-1">

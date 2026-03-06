@@ -10,14 +10,4 @@ body {
   color: rgb(var(--foreground-rgb));
 }
 
-* {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-input,
-textarea,
-[contenteditable="true"] {
-  user-select: text;
-  -webkit-user-select: text;
-}
+/* Standard selection behavior allowed */
