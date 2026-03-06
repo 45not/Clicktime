@@ -22,6 +22,16 @@ export default async function CalendarPage() {
 
     const { data: blocks, error: blockError } = await query
 
+    // Fetch holidays for the current and adjacent years (just fetch all for now, it's a small table)
+    const { data: holidays, error: holidayError } = await supabase
+        .from('holidays')
+        .select('*')
+        .order('holiday_date', { ascending: true })
+
+    if (holidayError) {
+        console.error('Holiday Fetch Error:', holidayError)
+    }
+
     // Fetch profiles separately to bypass missing DB relationship
     const { data: allProfiles } = await supabase.from('profiles').select('id, name')
     const profileMap = new Map(allProfiles?.map(p => [p.id, p.name]) || [])
@@ -31,7 +41,7 @@ export default async function CalendarPage() {
         profiles: { name: profileMap.get(b.user_id) || 'Unknown' }
     })) || []
 
-    console.log(`CalendarPage: Fetched ${processedBlocks.length} processed blocks. Total profiles mapped: ${profileMap.size}`)
+
     if (blockError) {
         console.error('Calendar Fetch Error:', blockError)
     }
@@ -68,7 +78,7 @@ export default async function CalendarPage() {
                     </div>
 
                     <div className="flex items-center space-x-4">
-                        <div className="hidden md:flex flex-col items-end mr-2">
+                        <div className="hidden md:flex flex-col items-end mr-8">
                             <span className="text-sm font-bold text-slate-900">{profile.name}</span>
                             <span className="text-[10px] font-bold text-slate-400 capitalize tracking-wider">{profile.role}</span>
                         </div>
@@ -84,6 +94,7 @@ export default async function CalendarPage() {
             <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col min-h-0">
                 <CalendarClient
                     initialBlocks={processedBlocks}
+                    initialHolidays={holidays || []}
                     userId={profile.id}
                     isAdmin={profile.role === 'admin'}
                     users={users}
